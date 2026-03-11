@@ -1,0 +1,26 @@
+# Project: db kind rewind (Tauri + React + Rust)
+
+## Global Context
+
+You are building "db kind rewind", a native macOS desktop widget that acts like a "video game save state" for local PostgreSQL databases.
+
+The UI must be a floating, minimal widget (approx 320x480) with a dark-mode, retro VCR / hardware aesthetic. 
+
+## AI Tooling Rule (CRITICAL)
+
+Before writing Tauri code, always refer to the official Tauri V2 LLM documentation: https://v2.tauri.app/llms.txt
+
+## Frontend Rules (React + TypeScript + Vanilla CSS)
+
+- STRICTLY use vanilla CSS via CSS Modules (e.g., `ComponentName.module.css`) for all styling. 
+- DO NOT use Tailwind CSS or any utility class frameworks.
+- Use Framer Motion for snappy, sub-second micro-interactions (e.g., swapping a loading bar for a checkmark).
+- Aesthetic: Deep dark grays/blacks, glowing VFD green or neon accents, chunky mechanical-feeling buttons. 
+- UI Signifiers: Use terms like "REWIND" (to restore) and "INDEX MARK" (to register a snapshot). 
+
+## Backend Rules (Rust)
+
+- KEEP RUST DUMB. Do not over-engineer the Rust backend.
+- Do not build complex state management in Rust. State lives in React.
+- The Rust backend (`src-tauri/src/main.rs`) is ONLY a bridge to execute raw SQL queries via the `tokio-postgres` crate.
+- If a Rust compiler error occurs, prioritize the simplest, most brute-force fix rather than introducing complex lifetimes or traits.
