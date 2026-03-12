@@ -28,6 +28,7 @@ Runs inside Tauri's webview with the full Rust backend. `invoke()` calls hit rea
 
 ### To do
 
+- Resize the listing VFD
 - Review the error messages
 - Replace logos
 - Clean up unused assets
