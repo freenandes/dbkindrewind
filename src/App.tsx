@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,6 +9,24 @@ type Snapshot = {
   label: string;
   timestamp: string;
 };
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+
+  const now = new Date();
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+
+  if (isToday) {
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  return `${pad(d.getFullYear() % 100)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 type AppStatus =
   | "STANDBY"
@@ -22,6 +40,7 @@ const fade = { duration: 0.15 };
 const slide = { duration: 0.2 };
 
 const SLOTS = 4;
+const MAX_SNAPSHOTS = 999;
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
 const mockDelay = (ms = 1200) =>
   !isTauri ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
@@ -32,6 +51,10 @@ function App() {
   const [dbName, setDbName] = useState("");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [status, setStatus] = useState<AppStatus>("STANDBY");
+  // Simulate other statuses with:
+  //
+  // const [status, setStatus] = useState<AppStatus>("ERROR");
+  //
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const snapCounter = useRef(0);
@@ -74,7 +97,7 @@ function App() {
           setSnapshots(
             existing.map((snapName, i) => ({
               id: snapName,
-              label: `MARK ${String(i + 1).padStart(3, "0")}`,
+              label: `S${String(i + 1).padStart(3, "0")}`,
               timestamp: "recovered",
             }))
           );
@@ -98,6 +121,11 @@ function App() {
   };
 
   const handleCreateSnapshot = async () => {
+    if (snapshots.length >= MAX_SNAPSHOTS) {
+      setStatus("ERROR");
+      setError(`Maximum of ${MAX_SNAPSHOTS} snapshots reached`);
+      return;
+    }
     setStatus("INDEXING");
     setError("");
     snapCounter.current += 1;
@@ -111,16 +139,11 @@ function App() {
         });
       }
       await mockDelay();
-      const timestamp = new Date().toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
+      const timestamp = new Date().toISOString();
       setSnapshots((prev) => [
         {
           id: snapshotName,
-          label: `MARK ${String(snapCounter.current).padStart(3, "0")}`,
+          label: `S${String(snapCounter.current).padStart(3, "0")}`,
           timestamp,
         },
         ...prev,
@@ -197,6 +220,32 @@ function App() {
     return dbName;
   };
 
+  const statusIcons: Record<string, React.ReactNode> = {
+    SAVING: (
+      <svg viewBox="0 0 16 16">
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M8 3a5 5 0 1 1 0 10A5 5 0 0 1 8 3m0 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4" />
+      </svg>
+    ),
+    RWD: (
+      <svg viewBox="0 0 16 16">
+        <path
+          fill="currentColor"
+          d="M9 12 5 8l4-4zM13 12 9 8l4-4zM5 11.5H3v-7h2z"/>
+      </svg>
+    ),
+    ERROR: (
+      <svg viewBox="0 0 16 16">
+        <path
+          fill="currentColor"
+          d="M8 5.5 9 2v4l3-4.5L11 7l4-1.5-4 4.5 3 1-4 1v2.5L8.5 11 11 8 9 9l.5-2.5-1.5 2L7 7l.5 3H5l2 1-.5 2 1-1 1 1L5 15l.5-3h-3L5 11 .5 8.5l4 .5-3-5L6 7 4.5 1z"/>
+      </svg>
+    ),
+  };
+
   const vfdStatuses = [
     { label: "CONNECTED", when: status === "CONNECTED" },
     { label: "SAVING",    when: status === "INDEXING" },
@@ -221,21 +270,7 @@ function App() {
           <div className="vcr-indicator" data-status={displayStatus} />
           <span className="vcr-brand">db kind rewind</span>
         </div>
-        <AnimatePresence>
-          {screen === "player" && (
-            <motion.button
-              className="vcr-btn vcr-btn-eject"
-              onClick={handleDisconnect}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={fade}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              ⏏ EJECT
-            </motion.button>
-          )}
-        </AnimatePresence>
+{}
       </div>
 
       <div className="vcr-chassis">
@@ -257,15 +292,20 @@ function App() {
               {vfdMainText()}
             </motion.div>
           </AnimatePresence>
-          <div className="vfd-status vfd-status-row">
+          <div className="vfd-status-row">
             {vfdStatuses.map((s) => (
-              <span key={s.label} className={s.when ? "vfd-lit" : ""}>
+              <span key={s.label} className={s.when ? "vfd-status vfd-lit" : "vfd-status"}>
+                {statusIcons[s.label]}
                 {s.label}
               </span>
             ))}
           </div>
         </div>
-
+        <div className="vcr-vanity">
+          <span>Postgres</span> <span>Technology</span>
+        </div>
+      </div>
+      <div className="vcr-chassis">
         <AnimatePresence mode="wait">
           {screen === "setup" ? (
             <motion.div
@@ -283,26 +323,37 @@ function App() {
                   handleConnect();
                 }}
               >
-                <label className="vcr-label">connection string</label>
+                <label className="vcr-label">Connection URL</label>
                 <input
                   className="vcr-input"
                   type="text"
-                  placeholder="postgresql://localhost:5432/mydb"
+                  placeholder="Paste URL here..."
                   value={connectionString}
                   onChange={(e) => setConnectionString(e.target.value)}
                   spellCheck={false}
                   autoFocus
                 />
                 {error && <div className="vcr-error">{error}</div>}
-                <button
-                  className="vcr-btn vcr-btn-primary"
-                  type="submit"
-                  disabled={
-                    !connectionString.trim() || status === "CONNECTING"
-                  }
-                >
-                  {status === "CONNECTING" ? "CONNECTING..." : "▶ CONNECT"}
-                </button>
+                <div className="vcr-btn-container">
+                  <button
+                    className="vcr-btn vcr-btn-primary"
+                    type="submit"
+                    disabled={
+                      !connectionString.trim() || status === "CONNECTING"
+                    }
+                  >
+                    {status === "CONNECTING" ? "CONNECTING..." : (
+                      <>
+                        {" "}CONNECT
+                        <svg viewBox="0 0 16 16">
+                          <path
+                            fill="currentColor"
+                            d="m4 3 10 5-10 5z" />
+                        </svg>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </motion.div>
           ) : (
@@ -316,85 +367,125 @@ function App() {
             >
               {error && <div className="vcr-error">{error}</div>}
 
-              <motion.button
-                className="vcr-btn vcr-btn-index"
-                onClick={handleCreateSnapshot}
-                disabled={status === "INDEXING" || status === "REWINDING"}
+              <motion.div
+                className="btn-row"
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05, duration: 0.2 }}
-              >
-                ● INDEX MARK
-              </motion.button>
+                transition={{ delay: 0.05, duration: 0.2 }} >
+                  <motion.div
+                    className="vcr-btn-container vcr-btn-eject" >
+                      <button
+                        className="vcr-btn vcr-btn-red"
+                        onClick={handleDisconnect}
+                        onMouseDown={(e) => e.stopPropagation()} >
+                          <svg viewBox="0 0 16 16">
+                            <path
+                              fill="currentColor"
+                              d="M12.5 12h-9v-2h9zM13 8H3l5-5z" />
+                          </svg>
+                      </button>
+                  </motion.div>
+                  <motion.div
+                    className="vcr-btn-container vcr-btn-quicksave">
+                      <button
+                        className="vcr-btn vcr-btn-primary"
+                        onClick={handleCreateSnapshot}
+                        disabled={status === "INDEXING" || status === "REWINDING" || snapshots.length >= MAX_SNAPSHOTS} >
+                          {/* <svg viewBox="0 0 16 16">
+                            <path
+                              fill="currentColor"
+                              fillRule="evenodd"
+                              clipRule="evenodd"
+                              d="M8 3a5 5 0 1 1 0 10A5 5 0 0 1 8 3m0 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4" />
+                          </svg> */}
+                          Save Snapshot
+                      </button>
+                  </motion.div>
+              </motion.div>
 
               <motion.div
                 className="tape-section"
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.2 }}
-              >
-                <div className="tape-head-row">
-                  <div className="tape-side tape-side-left" />
-                  <div className="tape-library-header">
-                    <span className="tape-library-title">
-                      ▪ tape library
-                    </span>
-                    <span className="tape-count">
-                      {snapshots.length} saved
-                    </span>
-                  </div>
-                  <div className="tape-side tape-side-right" />
-                </div>
-
-                <div className="tape-slots">
-                  {slots.map((snap, i) => (
-                    <div className="tape-row" key={`slot-${i}`}>
-                      <div className="tape-side tape-side-left">
-                        <button
-                          className="vcr-btn vcr-btn-delete"
-                          onClick={() => snap && handleDelete(snap.id)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <div className="tape-row-info">
-                        <AnimatePresence mode="wait">
-                          <motion.div
-                            key={snap?.id ?? `empty-${i}`}
-                            className="tape-slot-content"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={fade}
-                          >
-                            {snap ? (
-                              <>
-                                <span className="snapshot-label">
-                                  {snap.label}
-                                </span>
-                                <span className="snapshot-time">
-                                  {snap.timestamp}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="tape-slot-dash">
-                                ── ── ──
-                              </span>
-                            )}
-                          </motion.div>
-                        </AnimatePresence>
-                      </div>
-                      <div className="tape-side tape-side-right">
-                        <button
-                          className="vcr-btn vcr-btn-rewind"
-                          onClick={() => snap && handleRewind(snap.id)}
-                        >
-                          ◀◀ RWD
-                        </button>
-                      </div>
+                transition={{ delay: 0.1, duration: 0.2 }}>
+                  <div className="tape-head-row">
+                    <div className="tape-side tape-side-left" />
+                    <div className="tape-library-header">
+                      {/* <span className="tape-var tape-count">
+                        {snapshots.length}22
+                      </span>
+                      <span className="vfd-status vfd-lit">
+                        Snap(s)
+                      </span> */}
+                      <span className="tape-var tape-pages">
+                        PAG {page + 1}/{totalPages}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                    <div className="tape-side tape-side-right" />
+                  </div>
+                  <div className="tape-slots">
+                    {slots.map((snap, i) => (
+                      <div className="tape-row" key={`slot-${i}`}>
+                        <div className="tape-side tape-side-left">
+                          <div className="vcr-btn-container">
+                            <button
+                              className="vcr-btn vcr-btn-delete vcr-btn-red"
+                              onClick={() => snap && handleDelete(snap.id)}
+                            >
+                              DEL
+                            </button>
+                          </div>
+                        </div>
+                        <div className="tape-row-info">
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={snap?.id ?? `empty-${i}`}
+                              className="tape-slot-content"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              transition={fade}
+                            >
+                              {snap ? (
+                                <>
+                                  <span className="snapshot-label tape-var">
+                                    {snap.label}&nbsp;
+                                  </span>
+                                  <span className="snapshot-time tape-var">
+                                    {formatTimestamp(snap.timestamp)}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="tape-slot-dash tape-var">
+                                    ----&nbsp;
+                                  </span>
+                                  <span className="tape-slot-dash tape-var">
+                                    --&nbsp;--&nbsp;--
+                                  </span>
+                                </>
+                              )}
+                            </motion.div>
+                          </AnimatePresence>
+                        </div>
+                        <div className="tape-side tape-side-right">
+                          <div className="vcr-btn-container">
+                            <button
+                              className="vcr-btn vcr-btn-rewind"
+                              onClick={() => snap && handleRewind(snap.id)}
+                            >
+                              <svg viewBox="0 0 16 16">
+                                <path
+                                  fill="currentColor"
+                                  d="M9 12 5 8l4-4zM13 12 9 8l4-4zM5 11.5H3v-7h2z"/>
+                              </svg>
+                              RWD
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
                 <div className="tape-foot-row">
                   <div className="tape-side tape-side-left" />
@@ -409,23 +500,32 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.12, duration: 0.2 }}
               >
-                <button
-                  className="vcr-btn vcr-btn-nav"
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                >
-                  ▲
-                </button>
-                <span className="tape-page">
-                  {page + 1}/{totalPages}
-                </span>
-                <button
-                  className="vcr-btn vcr-btn-nav"
-                  onClick={() =>
-                    setPage((p) => Math.min(totalPages - 1, p + 1))
-                  }
-                >
-                  ▼
-                </button>
+                <div className="vcr-btn-container">
+                  <button
+                    className="vcr-btn vcr-btn-nav prev"
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  >
+                    <svg viewBox="0 0 16 16">
+                      <path
+                        fill="currentColor"
+                        d="m4 3 10 5-10 5z" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="vcr-btn-container">
+                  <button
+                    className="vcr-btn vcr-btn-nav next"
+                    onClick={() =>
+                      setPage((p) => Math.min(totalPages - 1, p + 1))
+                    }
+                  >
+                    <svg viewBox="0 0 16 16">
+                      <path
+                        fill="currentColor"
+                        d="m4 3 10 5-10 5z" />
+                    </svg>
+                  </button>
+                </div>
               </motion.div>
 
             </motion.div>
