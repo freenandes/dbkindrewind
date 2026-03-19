@@ -42,7 +42,9 @@ const slide = { duration: 0.2 };
 const SLOTS = 4;
 const MAX_SNAPSHOTS = 999;
 const isTauri = !!(window as any).__TAURI_INTERNALS__;
-const mockDelay = (ms = 1200) =>
+
+// Delay for the mockup so we can test the saving/rewinding animations
+const mockDelay = (ms = 1000) =>
   !isTauri ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
 
 function App() {
@@ -247,10 +249,10 @@ function App() {
   };
 
   const vfdStatuses = [
-    { label: "CONNECTED", when: status === "CONNECTED" },
-    { label: "SAVING",    when: status === "INDEXING" },
-    { label: "RWD", when: status === "REWINDING" },
-    { label: "ERROR",     when: status === "ERROR" },
+    { label: "CONNECTED", when: status === "CONNECTED", blink: false },
+    { label: "SAVING",    when: status === "INDEXING",  blink: true },
+    { label: "RWD",       when: status === "REWINDING", blink: true },
+    { label: "ERROR",     when: status === "ERROR",     blink: false },
   ];
 
   const totalPages = Math.max(1, Math.ceil(snapshots.length / SLOTS));
@@ -294,7 +296,7 @@ function App() {
           </AnimatePresence>
           <div className="vfd-status-row">
             {vfdStatuses.map((s) => (
-              <span key={s.label} className={s.when ? "vfd-status vfd-lit" : "vfd-status"}>
+              <span key={s.label} className={`vfd-status${s.when ? " vfd-lit" : ""}${s.when && s.blink ? " vfd-blink" : ""}`}>
                 {statusIcons[s.label]}
                 {s.label}
               </span>
@@ -417,8 +419,11 @@ function App() {
                       <span className="vfd-status vfd-lit">
                         Snap(s)
                       </span> */}
+                      <span className="vfd-status vfd-lit"> 
+                        Page
+                      </span>
                       <span className="tape-var tape-pages">
-                        PAG {page + 1}/{totalPages}
+                        {page + 1}/{totalPages}
                       </span>
                     </div>
                     <div className="tape-side tape-side-right" />
